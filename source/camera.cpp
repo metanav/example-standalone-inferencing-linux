@@ -1,31 +1,16 @@
-/* Edge Impulse Linux SDK
- * Copyright (c) 2021 EdgeImpulse Inc.
- *
- * Permission is hereby granted, free of charge, to any person obtaining a copy
- * of this software and associated documentation files (the "Software"), to deal
- * in the Software without restriction, including without limitation the rights
- * to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
- * copies of the Software, and to permit persons to whom the Software is
- * furnished to do so, subject to the following conditions:
- *
- * The above copyright notice and this permission notice shall be included in
- * all copies or substantial portions of the Software.
- *
- * THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
- * IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
- * FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
- * AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
- * LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
- * OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
- * SOFTWARE.
- */
-
 #include <unistd.h>
 #include "opencv2/opencv.hpp"
-#include "opencv2/videoio/videoio_c.h"
-#include "edge-impulse-sdk/classifier/ei_run_classifier.h"
 #include "iostream"
+#include "opencv2/videoio/videoio_c.h"
+#include "nadjieb/mjpeg_streamer.hpp"
 
+#define EIDSP_USE_CMSIS_DSP   1
+#define EIDSP_LOAD_CMSIS_DSP_SOURCES  1
+#define EI_CLASSIFIER_TFLITE_ENABLE_CMSIS_NN      1
+
+#include "edge-impulse-sdk/classifier/ei_run_classifier.h"
+
+using MJPEGStreamer = nadjieb::MJPEGStreamer;
 static bool use_debug = false;
 
 // If you don't want to allocate this much memory you can use a signal_t structure as well
@@ -68,6 +53,8 @@ int main(int argc, char** argv) {
     // If you see: OpenCV: not authorized to capture video (status 0), requesting... Abort trap: 6
     // This might be a permissions issue. Are you running this command from a simulated shell (like in Visual Studio Code)?
     // Try it from a real terminal.
+    //
+    printf("OPENCV VERSION: %d_%d\n", CV_MAJOR_VERSION, CV_MINOR_VERSION);
 
     if (argc < 2) {
         printf("Requires one parameter (ID of the webcam).\n");
@@ -86,12 +73,22 @@ int main(int argc, char** argv) {
         }
     }
 
-    // open the webcam...
+    MJPEGStreamer streamer;
+    streamer.start(80);
+    std::vector<int> params = {cv::IMWRITE_JPEG_QUALITY, 90};
+
+    // open the camera...
     cv::VideoCapture camera(atoi(argv[1]));
     if (!camera.isOpened()) {
         std::cerr << "ERROR: Could not open camera" << std::endl;
         return 1;
-    }
+    } 
+
+    std::cout << "Resolution: " <<  camera.get(CV_CAP_PROP_FRAME_WIDTH) 
+	    << "x" << camera.get(CV_CAP_PROP_FRAME_HEIGHT) << std::endl;
+     std::cout   << "EI_CLASSIFIER_INPUT_WIDTH: " << EI_CLASSIFIER_INPUT_WIDTH
+         << " EI_CLASSIFIER_INPUT_HEIGHT: " << EI_CLASSIFIER_INPUT_HEIGHT << std::endl;
+
 
     if (use_debug) {
         // create a window to display the images from the webcam
@@ -145,6 +142,9 @@ int main(int argc, char** argv) {
                 continue;
             }
 
+	    cv::rectangle(cropped, cv::Point(bb.x, bb.y), cv::Point(bb.x+bb.width, bb.y+bb.height), cv::Scalar(255,255,255), 2);
+            cv::putText(cropped, bb.label, cv::Point(bb.x, bb.y-5), cv::FONT_HERSHEY_SIMPLEX, 0.5, cv::Scalar(0,0,0), 1);
+
             found_bb = true;
             printf("    %s (%f) [ x: %u, y: %u, width: %u, height: %u ]\n", bb.label, bb.value, bb.x, bb.y, bb.width, bb.height);
         }
@@ -153,14 +153,22 @@ int main(int argc, char** argv) {
             printf("    no objects found\n");
         }
     #else
-        printf("%d ms. ", result.timing.dsp + result.timing.classification);
+        printf("(DSP+Classification) %d ms.\n", result.timing.dsp + result.timing.classification);
+	size_t ix_max = -1;
+	float max_value = 0.f;
         for (size_t ix = 0; ix < EI_CLASSIFIER_LABEL_COUNT; ix++) {
-            printf("%s: %.05f", result.classification[ix].label, result.classification[ix].value);
-            if (ix != EI_CLASSIFIER_LABEL_COUNT - 1) {
-                printf(", ");
-            }
+	    if (result.classification[ix].value > max_value) {
+	        max_value = result.classification[ix].value;
+		ix_max =  ix;
+	    }
+            //printf("%s: %.05f", result.classification[ix].label, result.classification[ix].value);
+            //if (ix != EI_CLASSIFIER_LABEL_COUNT - 1) {
+            //    printf(", ");
+            //}
         }
-        printf("\n");
+        //printf("\n");
+	char text[30];
+	sprintf(text, "%s: %.2f", result.classification[ix_max].label, result.classification[ix_max].value);
     #endif
 
         // show the image on the window
@@ -175,7 +183,20 @@ int main(int argc, char** argv) {
         if (sleep_ms > 0) {
             usleep(sleep_ms * 1000);
         }
+
+
+	if (streamer.isAlive()) { 
+            std::vector<uchar> buff_bgr;
+            cv::imencode(".jpg", cropped, buff_bgr, params);
+            streamer.publish("/stream", std::string(buff_bgr.begin(), buff_bgr.end()));
+        } else {
+            printf("streamer is mot alive!\n");
+	}
+	 
     }
+
+    streamer.stop();
+
     return 0;
 }
 

@@ -10,16 +10,14 @@ fi
 cd $OPENCV_DIR
 
 if [ ! -d "opencv" ]; then
-    git clone https://github.com/opencv/opencv.git
-    cd opencv && git checkout 69357b1e88680658a07cffde7678a4d697469f03 && cd .. # v4.5.2
+    git clone -b 4.4.0 https://github.com/opencv/opencv.git
 fi
 if [ ! -d "opencv_contrib" ]; then
-    git clone https://github.com/opencv/opencv_contrib.git
-    cd opencv_contrib && git checkout f5d7f6712d4ff229ba4f45cf79dfd11c557d56fd && cd ..
+    git clone -b 4.4.0 https://github.com/opencv/opencv_contrib.git
 fi
 
 mkdir -p build_opencv
 cd build_opencv
-cmake -DCMAKE_BUILD_TYPE=Release -DBUILD_EXAMPLES=ON ../opencv
-make -j3
+cmake -DCMAKE_TOOLCHAIN_FILE=../opencv/platforms/linux/arm-gnueabi.toolchain.cmake -DOPENCV_EXTRA_MODULES_PATH=../opencv_contrib/modules  -DBUILD_LIST=photo,stitching,objdetect,tracking,imgcodecs,videoio,highgui,features2d,ml,xfeatures2d -DCMAKE_BUILD_TYPE=Release -DBUILD_EXAMPLES=ON ../opencv
+make -j
 sudo make install
