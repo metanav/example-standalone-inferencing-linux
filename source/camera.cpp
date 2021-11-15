@@ -3,11 +3,6 @@
 #include "iostream"
 #include "opencv2/videoio/videoio_c.h"
 #include "nadjieb/mjpeg_streamer.hpp"
-
-#define EIDSP_USE_CMSIS_DSP   1
-#define EIDSP_LOAD_CMSIS_DSP_SOURCES  1
-#define EI_CLASSIFIER_TFLITE_ENABLE_CMSIS_NN      1
-
 #include "edge-impulse-sdk/classifier/ei_run_classifier.h"
 
 using MJPEGStreamer = nadjieb::MJPEGStreamer;
